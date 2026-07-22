@@ -5916,3 +5916,9 @@ html.is-animating .transition-fade-down {
   color: var(--second-text-color);
   text-align: center;
 }
+.category-posts {
+  display: none;
+}
+.category-posts.open {
+  display: block;
+}
