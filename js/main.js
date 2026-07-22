@@ -1,71 +1,250 @@
-(function(){
+/* main function */
+import initBookmarkNav from "./layouts/bookmarkNav.js";
+import initCategoryList from "./layouts/categoryList.js";
+import initEssays from "./layouts/essays.js";
+import initHomeBanner from "./layouts/homeBanner.js";
+import initLazyLoad from "./layouts/lazyload.js";
+import { initTOC } from "./layouts/toc.js";
+import { navbarShrink } from "./layouts/navbarShrink.js";
+import initMasonry from "./plugins/masonry.js";
+import initMermaid from "./plugins/mermaid.js";
+import initPangu from "./plugins/pangu.js";
+import initTabs from "./plugins/tabs.js";
+import initTyped from "./plugins/typed.js";
+import initCopyCode from "./tools/codeBlock.js";
+import initExpirationDate from "./tools/expirationDate.js";
+import initModeToggle from "./tools/lightDarkSwitch.js";
+import {
+  initLocalSearchGlobals,
+  initLocalSearchPage,
+} from "./tools/localSearch.js";
+import initFooterRuntime from "./tools/runtime.js";
+import initScrollTopBottom from "./tools/scrollTopBottom.js";
+import initImageViewer from "./tools/imageViewer.js";
+import { initTocToggle } from "./tools/tocToggle.js";
+import { initUtilsGlobals, initUtilsPage } from "./utils.js";
+import {
+  onBeforeContentReplace,
+  onPageView,
+  onReady,
+  onVisitStart,
+} from "./app/lifecycle.js";
+import { abortPageScope, createPageScope, getAppSignal } from "./app/pageScope.js";
+import {
+  getStyleStatus,
+  setStyleStatus,
+  styleStatus,
+} from "./state/styleStatus.js";
 
-	// Highlight current nav item
-	var hasCurrent = false;
+const safeRun = (label, callback) => {
+  try {
+    callback();
+  } catch (error) {
+    console.error(`[redefine] ${label} failed:`, error);
+  }
+};
 
-	//把相对路径解析成绝对路径
-	function absolute(href) {
-	    var link = document.createElement("a");
-	    link.href = href;
-	    return (link.protocol+"//"+link.host+link.pathname+link.search+link.hash);
-	}
+const pageRefreshEvent = "redefine:page:refresh";
+let globalsInitialized = false;
+let didInitRefreshEvent = false;
 
-	//移出所有的菜单的选中样式
-	$('#main-nav > li').each(function(){
-		$(this).removeClass('current-menu-item current_page_item');
-	});
-	var links = $('#main-nav > li > a');
-	var urls = window.location.href;
-	//为什么要从后面往前面遍历？因为首页极有可能是https://xxxxx/,
-	//这样的话肯定能够匹配所有的项
-	for (var i = links.length; i >= 0; i--) {
-		if(urls.indexOf(absolute(links[i])) != -1){
-			$(links[i]).parent().addClass('current-menu-item current_page_item');
-			//为什么还要设置hasCurrent？因为不排除首页是
-			//https://xxxx/index.html格式的
-			hasCurrent = true;
-			break;
-		}		
-	}
+const initGlobalsOnce = () => {
+  if (globalsInitialized) {
+    return;
+  }
 
+  globalsInitialized = true;
+  const appSignal = getAppSignal();
 
-	if (!hasCurrent) {
-		$('#main-nav > li:first').addClass('current-menu-item current_page_item');
-	}
-})();
+  safeRun("utils:globals", () => {
+    initUtilsGlobals({ signal: appSignal });
+  });
+  safeRun("navbar:globals", () => {
+    navbarShrink.initGlobals({ signal: appSignal });
+  });
+  safeRun("tocToggle:globals", () => {
+    initTocToggle({ signal: appSignal });
+  });
+  safeRun("scrollTopBottom:globals", () => {
+    initScrollTopBottom({ signal: appSignal });
+  });
+  safeRun("tabs:globals", () => {
+    initTabs({ signal: appSignal });
+  });
+  safeRun("categoryList:globals", () => {
+    initCategoryList({ signal: appSignal });
+  });
+  safeRun("localSearch:globals", () => {
+    initLocalSearchGlobals({ signal: appSignal });
+  });
 
+  if (!didInitRefreshEvent) {
+    didInitRefreshEvent = true;
+    window.addEventListener(pageRefreshEvent, () => {
+      initPage();
+    });
+  }
+};
 
+const initPage = () => {
+  const pageSignal = createPageScope();
+  const appSignal = getAppSignal();
 
-// article toc
-var toc = document.getElementById('toc')
+  safeRun("utils:page", () => {
+    initUtilsPage({ signal: pageSignal });
+  });
+  safeRun("homeBanner", () => {
+    initHomeBanner({ signal: pageSignal });
+  });
+  safeRun("expirationDate", () => {
+    initExpirationDate();
+  });
+  safeRun("modeToggle", () => {
+    initModeToggle({ signal: pageSignal, appSignal });
+  });
+  safeRun("imageViewer", () => {
+    initImageViewer({ signal: pageSignal, appSignal });
+  });
 
-if (toc != null) {
-	window.addEventListener("scroll", scrollcatelogHandler);
-	var tocPosition = 194+25;
+  navbarShrink.setNavigating(false);
+  navbarShrink.refresh();
 
-	function scrollcatelogHandler(e) {
-		 var event = e || window.event,
-		     target = event.target || event.srcElement;
-		 var scrollTop = document.documentElement.scrollTop || document.body.scrollTop;
-		 if (scrollTop > tocPosition) {
-		     toc.classList.add("toc-fixed");
-		 } else {
-		     toc.classList.remove("toc-fixed");
-		 }
-	}
+  safeRun("footerRuntime", () => {
+    if (theme.footer?.runtime) {
+      initFooterRuntime();
+    }
+  });
+
+  safeRun("toc", () => {
+    if (theme.articles?.toc?.enable) {
+      initTOC({ signal: appSignal });
+    }
+  });
+
+  safeRun("tabs", () => {
+    if (theme.articles?.toc?.enable) {
+      initTabs({ signal: appSignal });
+    }
+  });
+
+  safeRun("essays", () => {
+    if (typeof moment !== "undefined") {
+      initEssays();
+    }
+  });
+
+  safeRun("pangu", () => {
+    if (theme.articles?.pangu_js) {
+      initPangu();
+    }
+  });
+
+  safeRun("mermaid", () => {
+    if (theme.plugins?.mermaid?.enable) {
+      initMermaid();
+    }
+  });
+
+  safeRun("masonry", () => {
+    initMasonry({ signal: pageSignal });
+  });
+
+  safeRun("typed", () => {
+    const subtitleConfig = theme.home_banner?.subtitle || {};
+    const subtitleText = subtitleConfig.text;
+    const subtitleEntries = Array.isArray(subtitleText)
+      ? subtitleText
+      : subtitleText
+        ? [subtitleText]
+        : [];
+    const shouldInitTyped =
+      subtitleEntries.length !== 0 ||
+      (subtitleConfig.hitokoto && subtitleConfig.hitokoto.enable);
+
+    if (shouldInitTyped && location.pathname === config.root) {
+      initTyped("subtitle");
+    }
+  });
+
+  safeRun("localSearch", () => {
+    if (theme.navbar?.search?.enable === true) {
+      initLocalSearchPage();
+    }
+  });
+
+  safeRun("copyCode", () => {
+    if (theme.articles?.code_block?.copy === true) {
+      initCopyCode();
+    }
+  });
+
+  safeRun("lazyload", () => {
+    if (theme.articles?.lazyload === true) {
+      initLazyLoad();
+    }
+  });
+
+  safeRun("bookmarkNav", () => {
+    if (theme.bookmarks && theme.bookmarks.length !== 0) {
+      initBookmarkNav({ signal: appSignal });
+    }
+  });
+
+  safeRun("categoryList", () => {
+    initCategoryList();
+  });
+};
+
+const teardownPage = () => {
+  abortPageScope();
+};
+
+export const main = {
+  themeInfo: {
+    theme: `Redefine v${theme.version}`,
+    author: "EvanNotFound",
+    repository: "https://github.com/EvanNotFound/hexo-theme-redefine",
+  },
+  styleStatus,
+  getStyleStatus,
+  setStyleStatus,
+  printThemeInfo: () => {
+    console.log(`
+  +======================================================================================+
+  |                                                                                      |
+  |    _____ _   _ _____ __  __ _____   ____  _____ ____  _____ _____ ___ _   _ _____    |
+  |   |_   _| | | | ____|  \\/  | ____| |  _ \\| ____|  _ \\| ____|  ___|_ _| \\ | | ____|   |
+  |     | | | |_| |  _| | |\\/| |  _|   | |_) |  _| | | | |  _| | |_   | ||  \\| |  _|     |
+  |     | | |  _  | |___| |  | | |___  |  _ <| |___| |_| | |___|  _|  | || |\\  | |___    |
+  |     |_| |_| |_|_____|_|  |_|_____| |_| \\_\\_____|____/|_____|_|   |___|_| \\_|_____|   |
+  |                                                                                      |
+  |                  https://github.com/EvanNotFound/hexo-theme-redefine                 |
+  +======================================================================================+
+                  `,
+    ); // console log message
+  },
+  refresh: () => {
+    initPage();
+  },
+};
+
+export function initMain() {
+  main.printThemeInfo();
 }
 
+onReady(() => {
+  initMain();
+  initGlobalsOnce();
+});
 
-$('#main-navigation').on('click', function(){
-    if ($('#main-navigation').hasClass('main-navigation-open')){
-      $('#main-navigation').removeClass('main-navigation-open');
-    } else {
-      $('#main-navigation').addClass('main-navigation-open');
-    }
-  });
+onPageView(() => {
+  initPage();
+});
 
-$('#content').on('click', function(){
-    if ($('#main-navigation').hasClass('main-navigation-open')){
-      $('#main-navigation').removeClass('main-navigation-open');
-    }
-  });
+onBeforeContentReplace(() => {
+  teardownPage();
+});
+
+onVisitStart(() => {
+  navbarShrink.setNavigating(true);
+});
